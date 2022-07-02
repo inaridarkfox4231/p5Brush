@@ -1,4 +1,11 @@
 let _system;
+let _dat; // グローバル～
+
+let config = {
+  brush: "circle",
+  w:10,
+  col: "#000",
+}
 
 // どこまでやるのか
 // 戻るの仕様がよく分からないのでそこら辺調べる
@@ -32,12 +39,33 @@ let _system;
 // あとsystem側からブラシを操作できるようにポインタを渡す
 // 以上
 
+// みつあみとか縄みたいのも面白そうね
+
+// 最後にクリックした場所からシフトキーでクリックでライン
+// とかあってもよさそう
+// 他にもスナップ機能とか
+// いろいろ実装したい
+// Altクリックでスポイトとか
+// Rで回転させてもいい（15°刻み）
+
+// よく考えたら導入時のcolって要らないな？
+// これ省いて別に変えられるようにしよう。wのデフォは
+// ブラシによって変えられるようにするけど。
+
+// ブラシごとにパラメータ変えるんだったら、
+// Scatterのstarとheartとかも切り替えできるようにしないとね
+
+// 円弧のSVGで月形を実装、円も実装してCircleブラシはなくす。
+
 const DRAW_DETAIL = 50;
 const SPEED_FACTOR = 0.1;
 
+// 円と月を追加
 const pathData = {};
 pathData.heart = "M 0 0.56 C -1 -0.14 -0.5 -0.84 0 -0.35 C 0.5 -0.84 1 -0.14 0 0.56";
 pathData.star = "M 0 -0.5 L 0.1123 -0.1545 L 0.4755 -0.1545 L 0.1816 0.059 L 0.2939 0.4045 L 0 0.191 L -0.2939 0.4045 L -0.1816 0.059 L -0.4755 -0.1545 L -0.1123 -0.1545 Z";
+pathData.circle = "M 0.5 0 A 0.5 0.5 0 1 1 0.5 -0.01 Z";
+pathData.moon = "M 0.5 0.49 A 0.7 0.7 0 1 1 0.5 -0.49 A 0.5 0.5 0 1 0 0.5 0.49 Z";
 
 // 0.8倍にした
 // つまり線の間隔は8です（標準で）
@@ -47,26 +75,32 @@ pathData.eighthRest = "M -1.000 -4.500 C 0.750 -6.500 -0.750 -8.500 -2.000 -8.50
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
+
+  _system = new DrawSystem();
   let _drawer = new Drawer();
-  let _brush1 = new CircleBrush(10, {col:"#fa4", intervalFactor:1.5});
-  let _brush2 = new LineBrush(1, {col:"#af4"});
-  let _brush3 = new MultiLineBrush(1, {col:"#4af", multiple:5});
-  let _brush4 = new TriangleBrush(16, {col:"#ff0", intervalFactor:1.2});
-  let _brush5 = new ThornBrush(45, {baseCol:"#04f", interval:1.0, colorBand:0.8, thick:0.02});
-  let _brush6 = new CurveIconBrush(20, {col:"#f4f", kind:"heart", intervalFactor:1.35});
-  let _brush7 = new CurveIconBrush(20, {col:"#fa4", kind:"star", intervalFactor:1.1});
+  _system.setDrawer(_drawer);
+
+  _system.registBrush(new CircleBrush("circle", 10, "#000", {intervalFactor:1.5}));
+  _system.registBrush(new LineBrush("line", 1, "#000", {}));
+  _system.registBrush(new MultiLineBrush("multiLine", 1, "#00f", {multiple:5}));
+  _system.registBrush(new TriangleBrush("triangle", 16, "#ff0", {intervalFactor:1.2}));
+  _system.registBrush(new ThornBrush("thorn", 45, "#04f", {interval:1.0, colorBand:0.8, thick:0.02}));
+  _system.registBrush(new CurveIconBrush("curveHeart", 20, "#f4f", {kind:"heart", intervalFactor:1.35}));
+  _system.registBrush(new CurveIconBrush("curveStar", 20, "#f64", {kind:"star", intervalFactor:1.1, fill:false}));
   // 0.8の方がそれっぽいから
   // 修正しないといけないかもしれない
   // SVGデータ作り直すの面倒なのでこのデータをいじります
-  let _brush8 = new MusicBrush(1, {col:"#4af"});
+  _system.registBrush(new MusicBrush("music", 1, "#000", {}));
 
-  let _brush9 = new ScatterIconBrush(20, {col:"#0af", secondCol:"#aff"});
+  _system.registBrush(new ScatterIconBrush("scatterStar", 20, "#0af", {secondCol:"#aff", fill:false}));
 
-  let _brush10 = new ScatterIconBrush(20, {col:"#f0f", secondCol:"#fff", kind:"heart", intervalFactor:0.5, sizeMinRatio:0.5, sizeMaxRatio:0.75});
+  _system.registBrush(new ScatterIconBrush("scatterHeart", 20, "#f0f", {secondCol:"#fff", kind:"heart", intervalFactor:0.5, sizeMinRatio:0.5, sizeMaxRatio:0.75, fill:true}));
   // 星屑とかやってみたいわね
-  _drawer.setBrush(_brush9);
-  _system = new DrawSystem();
-  _system.setDrawer(_drawer);
+  // scatterは月とか。
+
+  _system.setBrush("curveStar");
+
+  //_drawer.setBrush(_brush9);
 }
 
 function draw() {
@@ -88,15 +122,34 @@ class DrawSystem{
     this.brushLayer = createGraphics(width, height);
     this.infoLayer = createGraphics(width, height); // デバッグ用
     this.prepareBaseLayer();
+    this.prepareInfoLayer();
+    this.brushes = {};
   }
   prepareBaseLayer(){
     let bl = this.baseLayer;
-    bl.background(0);
-    bl.fill(255);
-    bl.textSize(14);
-    bl.textAlign(LEFT, TOP);
-    bl.text("drawing test", 10, 10);
-    bl.text("D: clear", 10, 30);
+    bl.background(255);
+  }
+  prepareInfoLayer(){
+    let il = this.infoLayer;
+    il.fill(0);
+    il.textSize(14);
+    il.textAlign(LEFT, TOP);
+    il.text("drawing test", 10, 10);
+    il.text("D: clear", 10, 30);
+  }
+  registBrush(newBrush){
+    const name = newBrush.getName();
+    this.brushes[name] = newBrush;
+  }
+  setBrush(name){
+    const _brush = this.brushes[name];
+    this.drawer.setBrush(_brush);
+  }
+  configBrush(name, param){
+    const _brush = this.brushes[name];
+    for(let key of Object.keys(param)){
+      _brush.setParam(key, param[key]);
+    }
   }
   setDrawer(_drawer){
     this.drawer = _drawer;
@@ -181,8 +234,14 @@ class Drawer{
   }
   complete(gr){
     gr.image(this.drawLayer, 0, 0);
-    this.drawLayer.clear();
+    this.drawClear();
     this.isDrawing = false;
+  }
+  drawClear(){
+    // drawLayerだけ個別でclearするようにする
+    // たとえばパラメータチェンジの際にこれを呼び出すことで
+    // パラメータいじる間の描画を防ぐことができる...（はず）
+    this.drawLayer.clear();
   }
 }
 
@@ -195,13 +254,15 @@ class Drawer{
 // 継承先でいろいろさせればいい
 
 class Brush{
-  constructor(w){
+  constructor(name, w, col){
     // currentPos.
     this.cx = 0;
     this.cy = 0;
     this.lastX = 0; // 備え付けでOK. draw内で適宜更新する。
     this.lastY = 0;
+    this.name = name; // ブラシの名前
     this.w = w; // ブラシの幅情報
+    this.col = col; // ブラシの色（デフォは黒で統一）
     this.noStart = true; // 最初のdrawだけなんかさせたい的な
   }
   initialize(gr){
@@ -217,6 +278,9 @@ class Brush{
     // 無くてもいい
     if(value == undefined){ this[paramName] = dft; return; }
     this[paramName] = value;
+  }
+  getName(){
+    return this.name;
   }
   set(x, y){
     this.cx = x;
@@ -255,9 +319,9 @@ class Brush{
 
 // シンプルに
 class CircleBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "col", "#fff");
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#fff");
     this.registParam(param, "intervalFactor", 1.5);
   }
   initialize(gr){
@@ -276,9 +340,9 @@ class CircleBrush extends Brush{
 
 // 線を引く
 class LineBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "col", "#fff");
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#fff");
     //this.col = col;
   }
   initialize(gr){
@@ -297,9 +361,9 @@ class LineBrush extends Brush{
 
 // 多重線を引く
 class MultiLineBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "col", "#fff");
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#fff");
     this.registParam(param, "multiple", 1);
     this.registParam(param, "intervalFactor", 10);
     //this.col = col;
@@ -352,9 +416,9 @@ class MultiLineBrush extends Brush{
 // 致命的なバグだ...
 // 直します。
 class MusicBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "col", "#fff");
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#fff");
     // 五線譜記述用
     this.lastXs = [];
     this.lastYs = [];
@@ -576,9 +640,9 @@ class MusicBrush extends Brush{
 
 // 三角形移しますね。
 class TriangleBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "col", "#fff");
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#fff");
     this.registParam(param, "intervalFactor", 1);
     //this.col = col;
     //this.intervalFactor = intervalFactor;
@@ -603,13 +667,9 @@ class TriangleBrush extends Brush{
 // colorBandは色のブレ具合で0.7くらいだといい感じ
 // thickはとげの厚さでデフォは0.04くらい、要するに渡しに対する幅
 class ThornBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "baseCol", "#2a2");
-    const _color = color(this.baseCol);
-    this.r = red(_color);
-    this.g = green(_color);
-    this.b = blue(_color);
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#2a2");
     this.registParam(param, "interval", 1);
     this.registParam(param, "colorBand", 0.7);
     this.registParam(param, "thick", 0.04);
@@ -628,13 +688,6 @@ class ThornBrush extends Brush{
     const diffY = (x1-x0)*this.thick;
     // quadにしよう。
     gr.quad(x0,y0,midX+diffX,midY+diffY,x1,y1,midX-diffX,midY-diffY);
-    /*
-    gr.beginShape();
-    gr.vertex(x0, y0);
-    gr.quadraticVertex(midX+diffX, midY+diffY, x1, y1);
-    gr.quadraticVertex(midX-diffX, midY-diffY, x0, y0);
-    gr.endShape();
-    */
   }
   draw(gr, x, y, dx, dy){
     if(mag(this.lastX - x, this.lastY - y)<this.interval){ return; }
@@ -665,15 +718,19 @@ class ThornBrush extends Brush{
     // 次に色。
     const h = Math.random();
     const band = this.colorBand;
-    let _r, _g, _b;
+    //let _r, _g, _b;
+    const _color = color(this.col);
+    let _r = red(_color);
+    let _g = green(_color);
+    let _b = blue(_color);
     if(h < 0.5){
-      _r = this.r * (1 - band + h * band * 2);
-      _g = this.g * (1 - band + h * band * 2);
-      _b = this.b * (1 - band + h * band * 2);
+      _r = _r * (1 - band + h * band * 2);
+      _g = _g * (1 - band + h * band * 2);
+      _b = _b * (1 - band + h * band * 2);
     }else{
-      _r = this.r + (255 - this.r) * (h - 0.5) * band * 2;
-      _g = this.g + (255 - this.g) * (h - 0.5) * band * 2;
-      _b = this.b + (255 - this.b) * (h - 0.5) * band * 2;
+      _r = _r + (255 - _r) * (h - 0.5) * band * 2;
+      _g = _g + (255 - _g) * (h - 0.5) * band * 2;
+      _b = _b + (255 - _b) * (h - 0.5) * band * 2;
     }
     gr.fill(_r, _g, _b);
     // このq0,q1がx,yからのdiffになる感じ。
@@ -707,11 +764,12 @@ class ThornBrush extends Brush{
 // カーブアイコンブラシ
 // ハート 星 など
 class CurveIconBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "col", "#f4f");
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#f4f");
     this.registParam(param, "kind", "heart");
     this.registParam(param, "intervalFactor", 1.2);
+    this.registParam(param, "fill", true);
     //this.col = col;
     //this.kind = kind;
     this.path = new Path2D(pathData[this.kind]);
@@ -719,16 +777,28 @@ class CurveIconBrush extends Brush{
   }
   initialize(gr){
     gr.blendMode(BLEND);
-    gr.noStroke();
-    gr.fill(this.col);
+    //gr.noStroke();
+    //gr.fill(this.col);
   }
   draw(gr, x, y, dx, dy){
     if(mag(this.lastX - x, this.lastY - y)<this.w * this.intervalFactor){ return; }
+    if(this.fill){
+      gr.noStroke();
+      gr.fill(this.col);
+    }else{
+      gr.stroke(this.col);
+      gr.noFill();
+      gr.strokeWeight(0.1);
+    }
     gr.push();
     gr.translate(x, y);
     gr.rotate(atan2(dy, dx));
     gr.scale(this.w);
-    gr.drawingContext.fill(this.path);
+    if(this.fill){
+      gr.drawingContext.fill(this.path);
+    }else{
+      gr.drawingContext.stroke(this.path);
+    }
     gr.pop();
     this.lastX = x;
     this.lastY = y;
@@ -739,14 +809,15 @@ class CurveIconBrush extends Brush{
 // いろんな色のいろんな大きさのオブジェクトが配置される感じ
 // 向きもランダムで
 class ScatterIconBrush extends Brush{
-  constructor(w, param){
-    super(w);
-    this.registParam(param, "col", "#ff4");
+  constructor(name, w, col, param){
+    super(name, w, col);
+    //this.registParam(param, "col", "#ff4");
     this.registParam(param, "secondCol", this.col); // 補間色
     this.registParam(param, "kind", "star");
     this.registParam(param, "intervalFactor", 0.25);
     this.registParam(param, "sizeMinRatio", 0.3); // 1.0～0.3倍
     this.registParam(param, "sizeMaxRatio", 1); // 一応。
+    this.registParam(param, "fill", true);
     // 設置する範囲の半径倍率（wの何倍か）
     //this.col = col;
     //this.kind = kind;
@@ -755,12 +826,19 @@ class ScatterIconBrush extends Brush{
   }
   initialize(gr){
     gr.blendMode(BLEND);
-    gr.noStroke();
+    //gr.noStroke();
   }
   draw(gr, x, y, dx, dy){
     if(mag(this.lastX - x, this.lastY - y)<this.w * this.intervalFactor){ return; }
     const iconCol = lerpColor(color(this.col), color(this.secondCol), Math.random());
-    gr.fill(iconCol);
+    if(this.fill){
+      gr.noStroke();
+      gr.fill(iconCol);
+    }else{
+      gr.noFill();
+      gr.stroke(iconCol);
+      gr.strokeWeight(0.1);
+    }
     gr.push();
     const _radius = Math.sqrt(Math.random())*this.w;
     const _angle = Math.random()*Math.PI*2;
@@ -769,7 +847,11 @@ class ScatterIconBrush extends Brush{
     gr.rotate(rotationAngle);
     const sizeFactor = this.sizeMinRatio + Math.random()*(this.sizeMaxRatio - this.sizeMinRatio);
     gr.scale(this.w * sizeFactor);
-    gr.drawingContext.fill(this.path);
+    if(this.fill){
+      gr.drawingContext.fill(this.path);
+    }else{
+      gr.drawingContext.stroke(this.path);
+    }
     gr.pop();
     this.lastX = x;
     this.lastY = y;
